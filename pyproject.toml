@@ -1,5 +1,5 @@
 [project]
-name = "deep-re-search"
+name = "seekdeep"
 version = "0.1.0"
 description = "A compact implementation of the DeepSearch concept using deepseek-r1 via Ollama"
 readme = "README.md"
