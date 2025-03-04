@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="deep-research",
+    name="seekdeep",
     version="0.1.0",
     description="A compact implementation of the DeepSearch concept using deepseek-r1 via Ollama",
     author="Your Name",

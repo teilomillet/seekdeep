@@ -2,6 +2,8 @@ import chromadb
 import requests
 import time
 import re
+from typing import List, Dict, Any, Optional, Union, Callable, TypedDict, Tuple
+from chromadb.api.models.Collection import Collection
 from seekdeep_data import (
     DECOMPOSE_PROMPT,
     EXPAND_PROMPT,
@@ -10,7 +12,100 @@ from seekdeep_data import (
     BEAST_MODE_PROMPT
 )
 
-def setup_db(name="research_collection"):
+# Type definitions
+class SearchResult(TypedDict):
+    """Type for search result item"""
+    text: str
+    metadata: Dict[str, Any]
+    id: str
+
+class EvaluationResult(TypedDict):
+    """Type for evaluation result"""
+    status: str
+    suggested: Optional[str]
+
+class DeepResearchResult(TypedDict):
+    """Type for deep_research result"""
+    answer: str
+    iterations: int
+    memory: Dict[str, Any]
+    beast_mode: Optional[bool]
+
+class DeepSearchResult(TypedDict):
+    """Type for deep_search result"""
+    answer: str
+    iterations: int
+    gap_questions: List[str]
+    search_history: List[Dict[str, Any]]
+    research_trail: List[Dict[str, Any]]
+    beast_mode: Optional[bool]
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate the number of tokens in a text string.
+    
+    This function provides a rough estimate of token count based on the 
+    typical token-to-character ratio in English text. More accurate counts
+    would require using the specific tokenizer of the target LLM.
+    
+    Args:
+        text (str): The text to estimate token count for
+        
+    Returns:
+        int: Estimated number of tokens in the text
+    """
+    # A common approximation is 4 characters per token for English text
+    # This is a rough estimate - true tokenization depends on the specific model
+    return len(text) // 4 + 1  # +1 to avoid returning 0 for very short strings
+
+def trim_context_to_budget(context_items: List[Dict[str, str]], token_budget: int) -> str:
+    """
+    Trim a list of context items to fit within a token budget.
+    
+    This function prioritizes more recent items (assumes the list is in 
+    chronological order) and includes as many as possible while staying
+    within the token budget.
+    
+    Args:
+        context_items (List[Dict[str, str]]): List of context dictionaries
+                                             with "question" and "context" keys
+        token_budget (int): Maximum number of tokens to include
+        
+    Returns:
+        str: Combined context string that fits within the token budget
+    """
+    # Reserve some tokens for the prompts and other text (headers, etc.)
+    reserved_tokens = 500
+    available_budget = max(token_budget - reserved_tokens, 500)  # Ensure minimum context size
+    
+    # Start with more recent items (reverse the list)
+    prioritized_items = list(reversed(context_items))
+    
+    included_contexts = []
+    current_token_count = 0
+    
+    # Add context items until we hit the budget
+    for item in prioritized_items:
+        context = item["context"]
+        question = item["question"]
+        
+        # Create a formatted context entry with the question
+        formatted_entry = f"Question: {question}\nContext: {context}"
+        entry_tokens = estimate_tokens(formatted_entry)
+        
+        # Check if adding this item would exceed our budget
+        if current_token_count + entry_tokens <= available_budget:
+            included_contexts.append(formatted_entry)
+            current_token_count += entry_tokens
+        else:
+            # If the item is too large, we could try to truncate it, but for simplicity
+            # we'll just skip it in this implementation
+            continue
+    
+    # Combine the included contexts (restore original order)
+    return "\n\n".join(reversed(included_contexts))
+
+def setup_db(name: str = "research_collection") -> Collection:
     """
     Creates and initializes a new ChromaDB collection for document storage.
     
@@ -28,7 +123,10 @@ def setup_db(name="research_collection"):
     """
     return chromadb.Client().create_collection(name=name)
 
-def add_docs(collection, texts, ids=None, metadatas=None):
+def add_docs(collection: Collection, 
+             texts: List[str], 
+             ids: Optional[List[str]] = None, 
+             metadatas: Optional[List[Dict[str, Any]]] = None) -> Collection:
     """
     Adds documents to a ChromaDB collection with optional custom IDs and metadata.
     
@@ -57,7 +155,7 @@ def add_docs(collection, texts, ids=None, metadatas=None):
     collection.add(documents=texts, metadatas=metadatas, ids=ids)
     return collection
 
-def search(collection, query, n_results=3):
+def search(collection: Collection, query: str, n_results: int = 3) -> List[SearchResult]:
     """
     Perform a semantic search on the ChromaDB collection to find relevant documents.
     
@@ -97,7 +195,9 @@ def search(collection, query, n_results=3):
     
     return search_results
 
-def generate(prompt, model="deepseek-r1:1.5b", base_url="http://localhost:11434/api"):
+def generate(prompt: str, 
+             model: str = "deepseek-r1:1.5b", 
+             base_url: str = "http://localhost:11434/api") -> str:
     """
     Generate text using a Large Language Model (LLM) via API.
     
@@ -122,7 +222,10 @@ def generate(prompt, model="deepseek-r1:1.5b", base_url="http://localhost:11434/
     # Return the response text if successful, otherwise return empty string
     return response.json().get("response", "") if response.status_code == 200 else ""
 
-def process_llm_calls(question, context=None, answer=None, mode="decompose"):
+def process_llm_calls(question: str, 
+                     context: Optional[str] = None, 
+                     answer: Optional[str] = None, 
+                     mode: str = "decompose") -> Union[List[str], str, EvaluationResult]:
     """
     Process LLM calls for different modes of research operation.
     
@@ -156,12 +259,12 @@ def process_llm_calls(question, context=None, answer=None, mode="decompose"):
     prompts = {
         "decompose": DECOMPOSE_PROMPT.format(question=question),
         "expand": EXPAND_PROMPT.format(query=question),
-        "answer": ANSWER_PROMPT.format(question=question, context=context),
+        "answer": ANSWER_PROMPT.format(question=question, context=context or "No relevant information found."),
         "evaluate": EVALUATE_PROMPT.format(question=question, answer=answer),
         "beast": BEAST_MODE_PROMPT.format(
             question=question, 
-            full_context=context, 
-            search_history=answer
+            full_context=context or "No relevant information found.", 
+            search_history=answer or ""
         )
     }
     
@@ -215,180 +318,303 @@ def process_llm_calls(question, context=None, answer=None, mode="decompose"):
             if not suggested:
                 suggested = f"more details about {question}"
         
-        # Return a dictionary with status and suggested follow-up (if needed)        
-        return {
+        # Return a dictionary with status and suggested follow-up (if needed)
+        eval_result: EvaluationResult = {
             "status": "complete" if is_complete else "incomplete",
             "suggested": suggested
-        }
+        }        
+        return eval_result
     
     else:  # answer or beast mode
         # Simply return the generated text as the answer
         return result
 
-def deep_research(question, collection, max_iterations=3):
+def _decompose_main_question(question: str) -> Tuple[List[str], int]:
+    """Extract sub-questions from the main question for exploration."""
+    sub_questions = process_llm_calls(question, mode="decompose")
+    if not isinstance(sub_questions, list):
+        # Type safety: ensure we have a list of questions
+        sub_questions = [question]
+    
+    # Estimate token usage for question decomposition
+    token_usage = estimate_tokens(str(sub_questions)) + 200  # Add overhead for prompt
+    
+    return sub_questions, token_usage
+
+def _expand_search_query(question: str) -> Tuple[str, int]:
+    """Expand the search query for better retrieval."""
+    search_query = process_llm_calls(question, mode="expand")
+    if not isinstance(search_query, str):
+        # Type safety: ensure we have a string query
+        search_query = question
+    
+    # Estimate token usage for query expansion
+    token_usage = estimate_tokens(search_query) + 100  # Add overhead for prompt
+    
+    return search_query, token_usage
+
+def _perform_search(collection: Collection, query: str, token_budget: int) -> Tuple[List[SearchResult], str, int]:
+    """Perform semantic search and prepare context within budget."""
+    # Perform semantic search to find relevant documents
+    search_results = search(collection, query)
+    
+    # Build context by combining all retrieved documents
+    context_str = "\n\n".join([r["text"] for r in search_results])
+    
+    # Check if context exceeds our token budget
+    context_tokens = estimate_tokens(context_str)
+    if context_tokens > token_budget // 2:  # Use half budget for individual answers
+        # Truncate to fit within half the token budget (save space for the answer)
+        context_str = context_str[:token_budget // 2 * 4]  # Convert tokens to approx char count
+        context_tokens = token_budget // 2
+        print(f"Context truncated to fit within token budget ({token_budget // 2} tokens)")
+    
+    return search_results, context_str, context_tokens
+
+def _generate_and_evaluate(question: str, current_question: str, context_str: str) -> Tuple[str, Dict[str, Any], int]:
+    """Generate an answer and evaluate its completeness."""
+    # Generate an answer based on the search results
+    answer_result = process_llm_calls(current_question, context_str, mode="answer")
+    if not isinstance(answer_result, str):
+        # Type safety: ensure we have a string answer
+        answer_result = "Unable to generate an answer."
+    answer = answer_result
+    
+    # Track token usage for answer generation
+    token_usage = estimate_tokens(answer) + 150  # Add overhead for prompt
+    
+    # Evaluate if the answer satisfactorily addresses the original question
+    eval_result = process_llm_calls(question, answer=answer, mode="evaluate")
+    if not isinstance(eval_result, dict):
+        # Type safety: handle unexpected result
+        eval_result = {"status": "incomplete", "suggested": None}
+    
+    # Add token usage for evaluation
+    token_usage += estimate_tokens(str(eval_result)) + 100  # Add overhead for prompt
+    
+    return answer, eval_result, token_usage
+
+def _activate_beast_mode(question: str, knowledge: List[Dict[str, str]], token_budget: int, current_usage: int) -> Tuple[str, int]:
+    """Generate a comprehensive answer in beast mode."""
+    print("\n--- Activating Beast Mode ---")
+    print(f"Token usage before beast mode: ~{current_usage} tokens")
+    
+    if knowledge:
+        # Calculate remaining token budget for context
+        remaining_budget = max(token_budget - current_usage, 1000)  # Ensure at least 1000 tokens
+        
+        # Use the token budget management function to create context within budget
+        full_context = trim_context_to_budget(knowledge, remaining_budget)
+        context_tokens = estimate_tokens(full_context)
+        token_usage = context_tokens
+        print(f"Beast mode context size: ~{context_tokens} tokens")
+    else:
+        full_context = "No relevant information found."
+        token_usage = 0
+    
+    # Create a summary of all the queries we've explored
+    history_str = "\n".join([f"Question explored: {item['question']}" for item in knowledge])
+    
+    # Generate a final comprehensive answer using all accumulated knowledge
+    beast_result = process_llm_calls(question, full_context, history_str, "beast")
+    if not isinstance(beast_result, str):
+        # Type safety: ensure we have a string answer
+        beast_result = "Unable to generate a comprehensive answer."
+    
+    # Add token usage for beast mode answer
+    token_usage += estimate_tokens(beast_result) + 200  # Add overhead for beast mode prompt
+    
+    return beast_result, token_usage
+
+def _select_next_question(sub_questions: List[str], current_iteration: int, eval_result: Dict[str, Any], original_question: str) -> str:
+    """Select the next question to process based on iteration and evaluation."""
+    if current_iteration < len(sub_questions):
+        # If there are more sub-questions in our decomposition, use the next one
+        return sub_questions[current_iteration]
+    else:
+        # Otherwise, use the suggested follow-up or fall back to the original question
+        return eval_result.get("suggested", "") if eval_result.get("suggested") else original_question
+
+def _process_research_step(current_query: str, 
+                         collection: Collection, 
+                         memory: Dict[str, List[Any]],
+                         main_question: str) -> Tuple[str, Dict[str, Any], bool]:
+    """Process a single research step and return the answer, evaluation result, and completion status."""
+    # Expand the query for better search results
+    search_query, _ = _expand_search_query(current_query)
+    
+    # Perform the search
+    search_results = search(collection, search_query)
+    
+    # Build context from search results
+    context_str = "\n\n".join([r["text"] for r in search_results])
+    
+    # Record search in memory
+    memory["search_history"].append({"query": current_query, "results": search_results})
+    
+    # Generate an answer
+    answer = process_llm_calls(current_query, context_str, mode="answer")
+    if not isinstance(answer, str):
+        answer = "Unable to generate a proper answer."
+    
+    # Add answer to memory
+    memory["answer_attempts"].append({"query": current_query, "answer": answer})
+    
+    # Evaluate the answer
+    eval_result = process_llm_calls(main_question, answer=answer, mode="evaluate")
+    if not isinstance(eval_result, dict):
+        eval_result = {"status": "incomplete", "suggested": None}
+    
+    # Check if answer is complete
+    is_complete = eval_result.get("status") == "complete"
+    
+    return answer, eval_result, is_complete
+
+def _generate_beast_mode_answer(question: str, 
+                              context: str, 
+                              memory: Dict[str, List[Any]]) -> str:
+    """Generate a comprehensive answer using beast mode."""
+    # Create a history string summarizing all queries performed
+    history_str = "\n".join([f"Query: {h['query']}" for h in memory["search_history"]])
+    
+    # Generate a comprehensive answer using beast mode
+    beast_answer = process_llm_calls(question, context, history_str, "beast")
+    if not isinstance(beast_answer, str):
+        beast_answer = "Unable to generate a comprehensive answer."
+    
+    return beast_answer
+
+def deep_research(question: str, 
+                 collection: Collection, 
+                 max_iterations: int = 3) -> DeepResearchResult:
     """
     Perform an in-depth research process on a question using iterative decomposition and refinement.
     
-    This function implements a research methodology that:
-    1. Decomposes a complex question into simpler sub-questions
-    2. Processes each sub-question sequentially 
-    3. For each sub-question:
-       - Expands the query to improve search relevance
-       - Searches for relevant documents
-       - Generates an answer based on the search results
-       - Evaluates if the answer is complete
-    4. If all iterations are used, creates a comprehensive "beast mode" answer
-       using all the gathered information
+    Uses a functional approach with smaller, focused helper functions to:
+    1. Decompose a complex question into simpler sub-questions
+    2. Process each sub-question sequentially
+    3. Evaluate answers and select the next question to explore
+    4. Fall back to "beast mode" for comprehensive synthesis if needed
     
     Args:
         question (str): The main research question to investigate
         collection: ChromaDB collection containing the knowledge documents to search
         max_iterations (int): Maximum number of research iterations before forced completion
-                             (default: 3)
         
     Returns:
-        dict: A dictionary containing:
-            - "answer" (str): The final answer text
-            - "iterations" (int): Number of iterations performed
-            - "memory" (dict): Research process data including:
-                - "sub_questions": List of decomposed questions
-                - "search_history": Search queries and results
-                - "answer_attempts": Generated answers for each step
-            - "beast_mode" (bool): Whether the answer was generated in beast mode
-                                  (only present if beast mode was used)
+        DeepResearchResult: A dictionary containing answer, iterations, and research data
     """
-    # Initialize tracking variables to store the research process
-    iterations = 0
+    # Initialize research memory
     memory = {
-        "sub_questions": [],  # Will store the decomposed questions
-        "search_history": [],  # Will store search queries and results
-        "answer_attempts": []  # Will store answers for each question
+        "sub_questions": [],
+        "search_history": [],
+        "answer_attempts": []
     }
     
-    # Step 1: Decompose the main question into simpler sub-questions
-    # This helps break down complex questions into manageable parts
-    sub_questions = process_llm_calls(question, mode="decompose")
+    # Decompose the main question
+    sub_questions, _ = _decompose_main_question(question)
     memory["sub_questions"] = sub_questions
     
-    # Start with the first sub-question (or the original if decomposition failed)
+    # Select the first question to process
     current_query = sub_questions[0] if sub_questions else question
     
-    # Main research loop - continue until max iterations or satisfactory answer
-    while iterations < max_iterations:
-        print(f"\n--- Step {iterations + 1} ---")
+    # Track current iteration
+    iteration = 0
+    latest_answer = ""
+    
+    # Main research loop
+    while iteration < max_iterations:
+        print(f"\n--- Step {iteration + 1} ---")
         print(f"Current question: {current_query}")
         
-        # Step 2: Search for relevant information
-        # First expand the query to enhance search relevance
-        search_query = process_llm_calls(current_query, mode="expand")
+        # Process this research step
+        answer, eval_result, is_complete = _process_research_step(
+            current_query, collection, memory, question
+        )
         
-        # Perform semantic search in the document collection
-        search_results = search(collection, search_query)
+        # Store the latest answer for potential return
+        latest_answer = answer
         
-        # Combine all retrieved documents into a single context string
-        context_str = "\n\n".join([r["text"] for r in search_results])
-        
-        # Keep track of search history for later analysis
-        memory["search_history"].append({"query": current_query, "results": search_results})
-        
-        # Step 3: Generate an answer using the retrieved information
-        answer = process_llm_calls(current_query, context_str, mode="answer")
-        memory["answer_attempts"].append({"query": current_query, "answer": answer})
-        
-        # Step 4: Special handling for the final iteration
-        # If we're on the last iteration, use "beast mode" to create a comprehensive answer
-        # that incorporates all the information gathered throughout the process
-        if iterations == max_iterations - 1:
-            # Create a history string summarizing all queries performed
-            history_str = "\n".join([f"Query: {h['query']}" for h in memory["search_history"]])
+        # Handle final iteration - use beast mode
+        if iteration == max_iterations - 1:
+            # Get the most recent context
+            last_context = ""
+            if memory["search_history"]:
+                last_results = memory["search_history"][-1]["results"]
+                last_context = "\n\n".join([r["text"] for r in last_results])
             
-            # Generate a comprehensive answer using beast mode
-            beast_answer = process_llm_calls(question, context_str, history_str, "beast")
+            # Generate beast mode answer
+            beast_answer = _generate_beast_mode_answer(question, last_context, memory)
             
-            # Return the final result with all tracking information
+            # Return final result with beast mode
             return {
                 "answer": beast_answer,
-                "iterations": iterations + 1,
+                "iterations": iteration + 1,
                 "memory": memory,
-                "beast_mode": True  # Flag indicating beast mode was used
+                "beast_mode": True
             }
         
-        # Step 5: Evaluate the current answer
-        # Check if the answer is satisfactory or if more research is needed
-        eval_result = process_llm_calls(question, answer=answer, mode="evaluate")
-        
-        # If the answer is complete, return it
-        if eval_result["status"] == "complete":
+        # If we have a complete answer, return it
+        if is_complete:
             return {
                 "answer": answer,
-                "iterations": iterations + 1,
-                "memory": memory
+                "iterations": iteration + 1,
+                "memory": memory,
+                "beast_mode": None
             }
         
-        # Step 6: Prepare for the next iteration
-        iterations += 1
+        # Prepare for next iteration
+        iteration += 1
         
-        # Select the next question:
-        # - If there are more sub-questions, use the next one
-        # - Otherwise, use the suggested follow-up from the evaluation
-        if iterations < len(sub_questions):
-            current_query = sub_questions[iterations]
-        else:
-            current_query = eval_result["suggested"] if eval_result["suggested"] else question
+        # Select the next question to process
+        current_query = _select_next_question(sub_questions, iteration, eval_result, question)
         
         # Add a small delay to prevent API rate limiting
         time.sleep(1)
     
-    # If we've exhausted all iterations and still don't have a complete answer,
-    # return the most recent answer with the tracking information
+    # If we've exhausted all iterations, return the latest answer
     return {
-        "answer": answer,
+        "answer": latest_answer,
         "iterations": max_iterations,
-        "memory": memory
+        "memory": memory,
+        "beast_mode": None
     }
 
-def deep_search(question, collection, max_iterations=3, token_budget=5000):
+def deep_search(question: str, 
+               collection: Collection, 
+               max_iterations: int = 3, 
+               token_budget: int = 5000, 
+               progress_callback: Optional[Callable[[], None]] = None) -> DeepSearchResult:
     """
     Perform a breadth-first search-based research approach to answer complex questions.
     
-    Unlike deep_research which processes sub-questions sequentially, this function:
-    1. Maintains a queue of questions (knowledge gaps) to investigate
-    2. Uses breadth-first-search to explore the question space
-    3. Dynamically adds new questions based on evaluation results
-    4. Builds a comprehensive knowledge base from search results
-    5. Falls back to "beast mode" if no satisfactory answer is found within iterations
-    
-    This approach is particularly effective for questions requiring exploration of
-    multiple related angles before synthesis into a final answer.
+    Uses a functional approach with smaller, focused helper functions to:
+    1. Decompose the main question into sub-questions
+    2. Process each question using breadth-first search 
+    3. Maintain a knowledge base of search results
+    4. Evaluate answers for completeness
+    5. Fall back to "beast mode" for comprehensive synthesis if needed
     
     Args:
         question (str): The main research question to investigate
         collection: ChromaDB collection containing the knowledge documents to search
         max_iterations (int): Maximum number of iterations before forced completion
-                             (default: 3)
         token_budget (int): Approximate maximum token count to use for context
-                           (default: 5000, helps prevent context overflows)
+        progress_callback (function): Optional callback function to report progress
         
     Returns:
-        dict: A dictionary containing:
-            - "answer" (str): The final answer text
-            - "iterations" (int): Number of iterations performed  
-            - "gap_questions" (list): All questions investigated during the process
-            - "search_history" (list): Search queries and results for each step
-            - "beast_mode" (bool): Whether the answer was generated in beast mode
-                                  (only present if beast mode was used)
+        DeepSearchResult: A dictionary containing answer, iterations, and research data
     """
-    # Initialize iteration counter
+    # Initialize tracking structures
     step = 0
-    
-    # Initialize tracking data structures
-    visited_queries = []  # Questions we've already processed
-    search_history = []   # History of all searches performed
-    knowledge = []        # Accumulated knowledge from all searches
+    visited_queries: List[str] = []
+    search_history: List[Dict[str, Any]] = []
+    knowledge: List[Dict[str, str]] = []
+    research_trail: List[Dict[str, Any]] = []
+    current_token_usage = 0
     
     # Initialize a FIFO queue with the original question as the first gap to fill
-    # This queue tracks all the "knowledge gaps" we need to address
-    gaps = [question]
+    gaps: List[str] = [question]
     
     # Main reasoning loop - continue until we run out of questions or hit max iterations
     while gaps and step < max_iterations:
@@ -396,16 +622,20 @@ def deep_search(question, collection, max_iterations=3, token_budget=5000):
         current_question = gaps.pop(0)
         visited_queries.append(current_question)
         
-        # Log the current step for monitoring
+        # Log the current step
         print(f"\n--- Step {step + 1} ---")
         print(f"Current question: {current_question}")
+        
+        # Call progress callback if provided
+        if progress_callback:
+            progress_callback()
+            
         step += 1
         
-        # Special handling for the first iteration only
-        # Decompose the main question into sub-questions to populate our queue
+        # Special handling for the first iteration - decompose the main question
         if step == 1:
-            # Break down the question into sub-questions
-            sub_questions = process_llm_calls(current_question, mode="decompose")
+            sub_questions, decomp_tokens = _decompose_main_question(current_question)
+            current_token_usage += decomp_tokens
             
             # Add each new sub-question to our queue if we haven't seen it before
             for q in sub_questions:
@@ -417,59 +647,64 @@ def deep_search(question, collection, max_iterations=3, token_budget=5000):
             if gaps and question not in gaps:
                 gaps.append(question)
         
-        # Search phase - expand and enrich the search query for better results
-        search_query = process_llm_calls(current_question, mode="expand")
+        # Expand the search query for better results
+        expanded_query, expand_tokens = _expand_search_query(current_question)
+        current_token_usage += expand_tokens
         
-        # Perform semantic search to find relevant documents
-        search_results = search(collection, search_query)
+        # Perform search and prepare context
+        search_results, context_str, context_tokens = _perform_search(
+            collection, expanded_query, token_budget
+        )
+        current_token_usage += context_tokens
         
-        # Record search history for later analysis and use in beast mode
+        # Record search history and knowledge
         search_history.append({"query": current_question, "results": search_results})
-        
-        # Build context by combining all retrieved documents
-        context_str = "\n\n".join([r["text"] for r in search_results])
-        
-        # Add to our accumulated knowledge base
         knowledge.append({"question": current_question, "context": context_str})
         
         # Generate and evaluate an answer, but only after the first step
-        # (The first step is just for decomposition and gathering initial info)
         if step > 1:
-            # Generate an answer based on the search results
-            answer = process_llm_calls(current_question, context_str, mode="answer")
+            # Generate answer and evaluate its completeness
+            answer, eval_result, answer_tokens = _generate_and_evaluate(
+                question, current_question, context_str
+            )
+            current_token_usage += answer_tokens
             
-            # Evaluate if the answer satisfactorily addresses the original question
-            eval_result = process_llm_calls(question, answer=answer, mode="evaluate")
+            # Add to research trail for tracking
+            research_trail.append({
+                "question": current_question,
+                "expanded_query": expanded_query,
+                "search_results": search_results,
+                "answer": answer
+            })
+            
+            # Display current token usage for monitoring
+            print(f"Current token usage: ~{current_token_usage} tokens (budget: {token_budget})")
             
             # If we have a satisfactory answer, return it immediately
-            if eval_result["status"] == "complete":
+            if eval_result.get("status") == "complete":
                 return {
                     "answer": answer,
                     "iterations": step,
                     "gap_questions": visited_queries,
-                    "search_history": search_history
+                    "search_history": search_history,
+                    "research_trail": research_trail,
+                    "beast_mode": None
                 }
             
             # If the answer is incomplete, add the suggested follow-up question
             # to our queue of knowledge gaps (if it's new)
-            if eval_result["suggested"] and eval_result["suggested"] not in visited_queries and eval_result["suggested"] not in gaps:
-                gaps.append(eval_result["suggested"])
+            if eval_result.get("suggested") and eval_result.get("suggested") not in visited_queries and eval_result.get("suggested") not in gaps:
+                gaps.append(eval_result.get("suggested", ""))
         
         # Add a small delay to prevent API rate limiting
         time.sleep(1)
     
-    # If we've reached max iterations or run out of questions without a satisfactory answer,
-    # use "beast mode" to synthesize everything we've learned
-    print("\n--- Activating Beast Mode ---")
-    
-    # Combine all gathered knowledge into a comprehensive context
-    full_context = "\n\n".join([k["context"] for k in knowledge])
-    
-    # Create a summary of all the queries we've explored
-    history_str = "\n".join([f"Query: {h['query']}" for h in search_history])
-    
-    # Generate a final comprehensive answer using all accumulated knowledge
-    final_answer = process_llm_calls(question, full_context, history_str, "beast")
+    # If no satisfactory answer, use "beast mode" to synthesize everything
+    final_answer, beast_tokens = _activate_beast_mode(
+        question, knowledge, token_budget, current_token_usage
+    )
+    current_token_usage += beast_tokens
+    print(f"Final total token usage: ~{current_token_usage} tokens")
     
     # Return the beast mode answer along with the research process data
     return {
@@ -477,5 +712,6 @@ def deep_search(question, collection, max_iterations=3, token_budget=5000):
         "iterations": step,
         "gap_questions": visited_queries,
         "search_history": search_history,
+        "research_trail": research_trail,
         "beast_mode": True
     } 

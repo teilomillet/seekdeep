@@ -13,6 +13,8 @@ DeepSearch is a new approach to information retrieval that runs through an itera
 - Evaluates answers and determines if more research is needed
 - Uses the deepseek-r1:1.5b model via Ollama
 - Follows functional programming principles for a cleaner implementation
+- Includes hallucination detection for fictional topics
+- Comprehensive inline documentation explaining both concepts and implementation details
 
 ### Key DeepSearch Features Implemented
 
@@ -23,6 +25,14 @@ Based on the Jina AI article ["A Practical Guide to Implementing DeepSearch/Deep
 - **Budget Forcing ("Beast Mode")**: Ensuring the system delivers an answer before budget expiration
 - **Memory Management**: Keeping track of what's been tried and learned
 - **Query Expansion**: Sophisticated query reformulation with synonyms and related terms
+- **Early Stopping**: Ending research when a satisfactory answer is found
+- **Factuality Checks**: Detecting and handling fictional or non-existent topics
+
+## Available Implementations
+
+This repository includes a basic implementation of the DeepSearch concept:
+
+**Basic Implementation** (`seekdeep_example.py`): A straightforward implementation that directly uses ChromaDB and the Ollama API.
 
 ## Core Functions Explained
 
@@ -62,102 +72,62 @@ The system is built around several key functions that work together to implement
   4. Evaluates answers and adds follow-up questions when needed
   5. Activates "Beast Mode" when iterations are exhausted
 
-## How It Works (In Plain Language)
+## Code Documentation
 
-Imagine you're doing research for a complex question:
+The codebase features extensive inline documentation that serves as both educational material and implementation reference:
 
-1. **Breaking Down the Problem**: First, the system analyzes your question and breaks it into smaller, easier sub-questions (like dividing a big homework problem into smaller steps).
+- **Conceptual Documentation**: Explains the DeepSearch approach and research methodologies
+- **Function Documentation**: Detailed docstrings with parameters, return values, and examples
+- **Implementation Notes**: Comments explaining design decisions and algorithm details
+- **Section Headers**: Clear code organization with descriptive section markers
 
-2. **Smart Searching**: For each sub-question, the system doesn't just search with the exact words - it expands your query with related terms (like searching for "canines" when you ask about "dogs").
+This documentation makes the code suitable for:
+- Learning about DeepSearch implementations
+- Exploring iterative research algorithms
+- Seeing factuality checking in practice
 
-3. **Reading and Learning**: The system reads the search results and extracts the important information.
+## Getting Started
 
-4. **Creating an Answer**: Based on what it found, the system creates an answer to the sub-question.
+### Prerequisites
 
-5. **Self-Checking**: The system evaluates its own answer - "Does this fully answer the question? Is anything missing?"
+- Python 3.9+
+- [ChromaDB](https://docs.trychroma.com/)
+- [Ollama](https://ollama.ai/) with the deepseek-r1:1.5b model
+- We recommend using uv to install the dependencies
 
-6. **Following Up**: If the answer isn't complete, it creates new questions to fill the gaps in understanding.
+### Installation
 
-7. **Final Answer**: After exploring multiple questions and gathering information, the system combines everything it learned to answer your original question.
-
-8. **Beast Mode**: If the system runs out of attempts but still hasn't found a satisfactory answer, it activates "Beast Mode" - a final comprehensive attempt using all accumulated information.
-
-## Example Walkthrough
-
-Let's trace through what happens when you run `deepseek_search_example.py`:
-
-1. The script first ensures Ollama is running and the deepseek-r1:1.5b model is available.
-
-2. It loads example documents into a ChromaDB collection.
-
-3. When you select a query (e.g., "Tell me about the ZigZaggeron-7 architecture"):
-   - The system first decomposes this into sub-questions like "What is the overall framework?" and "How does it function?"
-   
-4. For each sub-question:
-   - The query is expanded to include related terms
-   - A semantic search finds relevant documents
-   - The information is used to generate an answer
-   
-5. The system evaluates if the answer is satisfactory:
-   - If yes, it returns the answer
-   - If no, it tries another sub-question or generates a follow-up
-   
-6. If all iterations are used, Beast Mode activates:
-   - All accumulated information is combined
-   - A comprehensive answer is generated that tries to address all aspects of the original question
-
-This iterative approach mimics how a human researcher might tackle a complex question - breaking it down, gathering information on each aspect, and then synthesizing a complete answer.
-
-## Installation
-
-1. Install Ollama from [ollama.ai](https://ollama.ai)
-2. Pull the deepseek-r1:1.5b model:
-   ```bash
-   ollama pull deepseek-r1:1.5b
-   ```
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-```python
-from deepseek_core import setup_db, add_docs, deep_research
-
-# Setup vector database
-collection = setup_db("my_collection")
-
-# Add documents
-documents = [
-    "Artificial intelligence (AI) is intelligence demonstrated by machines.",
-    "Machine learning is a subset of AI focused on data-based prediction.",
-    # Add more documents...
-]
-collection = add_docs(collection, documents)
-
-# Perform research
-result = deep_research(
-    "What is the relationship between deep learning and neural networks?",
-    collection,
-    max_iterations=3
-)
-
-# Access results
-print(f"Answer: {result['answer']}")
-print(f"Total iterations: {result['iterations']}")
-print(f"Sub-questions used: {len(result['memory']['sub_questions'])}")
+1. Clone this repository
+2. Install the required packages:
+```bash
+uv sync
+```
+3. Make sure Ollama is installed and running
+4. Pull the deepseek-r1:1.5b model:
+```bash
+ollama pull deepseek-r1:1.5b
 ```
 
-## Running the Example
+### Running the Example
 
 ```bash
-# Make sure Ollama is running
-ollama serve
-
-# Run the example
-python deepseek_example.py
+python seekdeep_example.py
 ```
+
+This will start the example script that allows you to:
+1. Select from sample research questions
+2. Watch as the system decomposes and researches the question
+3. View the final answer and research trail
+
+## Documentation
+
+Detailed documentation is available in the `docs` directory:
+
+- [Example Walkthrough](docs/example_walkthrough.md): A step-by-step explanation of the example script
+- [Implementation Details](docs/implementation_details.md): Deep dive into the core implementation
+- [Function Reference](docs/function_reference.md): Comprehensive reference for all functions in seekdeep_core.py
+- [Example Program Guide](docs/seekdeep_example_guide.md): User-friendly guide explaining how to use the example program
+- [SeekDeep for Kids](docs/seekdeep_for_kids.md): Simple explanation of the concept for beginners and younger audiences
 
 ## Dependencies
 
