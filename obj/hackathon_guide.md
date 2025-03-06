@@ -1,86 +1,107 @@
-# DeepSearch Observability Hackathon Guide
+# DeepSearch Observability Challenge Guide
 
 ## Overview
 
-This 3-hour hackathon challenges teams to implement observability for the DeepSearch system using OpenTelemetry Protocol (OTLP). Each team will include members with both LLM expertise and observability knowledge working together.
+This 3-hour challenge invites participants to implement observability for the DeepSearch system using OpenTelemetry Protocol (OTLP). The focus is on deriving meaningful insights about system behavior rather than completing a prescribed set of tasks.
 
-## Team Structure
+## Participant Preparation
 
-Teams will be formed by mixing members with complementary expertise:
-- **LLM Knowledge**: Understanding of large language models, DeepSearch architecture, and semantic search
+Participants will benefit from:
+- **LLM Knowledge**: Understanding of large language models and their orchestration
 - **Observability Skills**: Experience with monitoring, metrics, tracing, and visualization
 
-This mixed-team approach encourages knowledge sharing and ensures each team has the complete skill set needed to succeed.
+Participants work in teams, bringing together complementary skills to create more comprehensive solutions.
 
-## Hackathon Structure
+## Challenge Structure
 
-### Time Allocation
-- **15 minutes**: Introduction and setup
-- **45 minutes**: Basic implementation (80-100 points possible)
-- **60 minutes**: Intermediate implementation (120-160 points possible)
-- **45 minutes**: Advanced implementation (60-90 points possible)
-- **15 minutes**: Presentations and wrap-up
+### Philosophy
 
-### Progression System
+We're looking for solutions that:
+- Illuminate system behavior in surprising ways
+- Create connections between seemingly unrelated metrics
+- Provide actionable intelligence for system improvement
+- Demonstrate creative approaches to complex monitoring challenges
 
-The hackathon employs a **progressive point system**:
-1. Teams must complete most basic tasks before advancing to intermediate tasks
-2. Teams must complete most intermediate tasks before attempting advanced tasks
-3. Points are awarded upon verification of working implementations
+## Focus Areas
 
-This encourages building a solid foundation rather than rushing to complex features.
+### Foundation Implementation
+Creating a solid observability foundation:
+- Proper instrumentation of key system components
+- Effective collection and processing of telemetry data
+- Reliable data pipeline from collection to presentation
 
-## Task Categories
+### Insight Development
+Uncovering meaningful information about the system:
+- Patterns in token usage across different operations
+- Performance bottlenecks in the research process
+- Factors that trigger beast mode activation
+- Error propagation and failure modes
 
-### Basic Tasks (10 points each)
-These tasks establish the required foundation:
-- Core setup of OpenTelemetry infrastructure
-- Basic tracing of main workflow components
-- Simple metrics collection for key operations
-- Error handling instrumentation
+### Interactive Capabilities
+Building ways to explore the observability data:
+- Real-time alerts for important conditions (like keyword detection in prompts)
+- Visual tools to explore system behavior
+- Export mechanisms for deeper analysis
+- Comparative analysis between different runs
 
-### Intermediate Tasks (20 points each)
-Building on the foundation:
-- Enhanced tracing with detailed spans for each phase
-- Meaningful metrics for performance and quality
-- Dashboard visualizations of the research process
-- Contextual attributes for deeper analysis
-
-### Advanced Tasks (30 points each)
-Deep insights into system behavior:
-- Advanced analysis of research patterns
-- Custom telemetry processing for LLM operations
-- Integration features for comprehensive monitoring
-- Performance anomaly detection
+### Alerting and Monitoring
+Implementing practical monitoring scenarios:
+- Setting up keyword detection for sensitive terms in prompts
+- Creating token budget threshold alerts
+- Detecting excessive iteration counts
+- Monitoring LLM latency patterns
+- Tracking answer quality trends
 
 ## Evaluation Criteria
 
-Teams will be evaluated on:
+Solutions will be evaluated on:
 
-1. **Functionality** (40%)
-   - Working OpenTelemetry implementation
-   - Key components properly instrumented
-   - Data correctly collected and exported
+1. **Foundation Quality** 
+   - How well basic observability is implemented
+   - Completeness of the instrumentation
+   - Reliability of the data pipeline
 
-2. **Insightfulness** (30%)
-   - Meaningful metrics and traces that reveal system behavior
-   - Clear visualization of the research process
-   - Ability to explain what the data shows
+2. **Insight Value** 
+   - What the solution reveals about the system
+   - How actionable and meaningful the findings are
+   - Unexpected discoveries that drive understanding
 
-3. **Technical Implementation** (20%)
-   - Code quality and organization
-   - Appropriate use of OpenTelemetry concepts
-   - Integration between components
+3. **Communication Effectiveness** 
+   - Clarity of information presentation
+   - Ability to communicate complex patterns
+   - Effectiveness of visualizations and explanations
 
-4. **Completeness** (10%)
-   - Breadth of implementation across the system
-   - Coverage of different telemetry types (traces, metrics, logs)
+4. **Technical Creativity** 
+   - Novel approaches to observability challenges
+   - Elegant solutions to difficult monitoring problems
+   - Innovative ways to correlate information
 
 ## Getting Started
 
-1. Review the observability_tasks.md document for the detailed task list
-2. Start with the Core Setup tasks (required)
-3. Select appropriate tasks from each category based on your team's expertise
-4. Follow the progression system to build incrementally
+1. Review the observability_tasks.md document for detailed guidance
+2. Start by setting up the OpenTelemetry SDK and export pipeline
+3. Instrument key system components (deep_search, LLM calls, vector search)
+4. Focus on areas you believe will yield the most valuable insights
+5. Develop at least one interactive capability
+6. Implement at least one alerting scenario
 
-Remember to focus on delivering working implementations rather than attempting too many features. Quality over quantity! 
+## Enriching Spans with Context
+
+Consider adding these attributes to your spans to provide richer context:
+- Research process attributes (iteration number, question type)
+- LLM operation details (token counts, prompt templates used)
+- Search operation information (original vs. expanded queries)
+- Answer generation context (completion status, question being answered)
+
+This additional context can dramatically increase the value of your traces for debugging and analysis.
+
+## Presentation Guidelines
+
+Your 5-minute presentation should include:
+1. A brief overview of your instrumentation approach
+2. A meaningful insight you discovered about the system
+3. A demonstration of at least one interactive capability
+4. An example of an alerting scenario you implemented
+5. A reflection on what your findings mean for the system
+
+The goal is to demonstrate how your observability solution helps understand and improve the system, not just showing technical implementation details. Focus on the "why" as much as the "how". 
